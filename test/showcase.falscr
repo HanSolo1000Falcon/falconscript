@@ -1,0 +1,71 @@
+!! This is a comment
+!/
+This is a block comment
+/!
+
+fn main(args: immut str[]) ret int {
+    std:print("Hello, ");
+    std:println("world!");
+    std:println(concat_string("This is", " falconscript!"));
+
+    var a: int = 1;
+    var b: float = 2.0;
+    std:println("{} + {} = {}", a, b, (a as float) + b);
+
+    for i: int in 0..10 {
+        std:println("{}", i);
+    }
+
+    var str_arr: str[] = ["Hello", "This is falconscript", "Falconscript is cool"];
+    for s: str in str_arr {
+        std:println(s);
+    }
+
+    var should_break: bool = false;
+    while true {
+        std:println("Hello,");
+        should_break = std:random() > 0.5;
+        if should_break {
+            break;
+        }
+    }
+
+    for arg: str in args {
+        std:println(arg);
+    }
+
+    std:println("arg length: {}", args:len());
+
+    if true and not (false or true == false or true != true) {
+        std:println("true");
+    }
+
+    str_arr:push("This is a new string");
+    std:println("{}", str_arr:len());
+    str_arr:rm(0);
+    std:println("{}", str_arr:len());
+
+    if std:random() > 0.5 {
+        std:println("true");
+    } elif std:random() > 0.25 {
+        std:println("maybe");
+    } else {
+        std:println("false");
+    }
+
+    if std:random() > 0.5 {
+        std:throw("This is an error");
+    }
+
+    try {
+        std:throw("This is an error");
+    } catch e: str {
+        std:println(e);
+    }
+
+    ret 0;
+}
+
+fn concat_string(a: str, b: str) ret str {
+    ret a..b;
+}
