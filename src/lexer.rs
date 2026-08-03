@@ -102,6 +102,8 @@ impl<'a> Lexer<'a> {
                 '-' => return Token::Minus,
                 '/' => return Token::Slash,
                 '%' => return Token::Percent,
+                '>' => return Token::GreaterThan,
+                '<' => return Token::LessThan,
                 '.' => {
                     return if self.chars.peek() == Some(&'.') {
                         self.chars.next();
@@ -135,9 +137,113 @@ impl<'a> Lexer<'a> {
                     }
                     continue;
                 }
+                '=' => {
+                    return match self.chars.peek() {
+                        Some('=') => {
+                            self.chars.next();
+                            Token::DoubleEqual
+                        }
+                        Some('<') => {
+                            self.chars.next();
+                            Token::LessEqual
+                        }
+                        Some('>') => {
+                            self.chars.next();
+                            Token::GreaterEqual
+                        }
+                        _ => Token::Equal,
+                    };
+                }
+                '"' => return self.next_string(),
+                c if c.is_alphabetic() => return self.next_word(&c),
+                c if c.is_ascii_digit() => return self.next_number(&c),
                 _ => panic!("Unexpected character: {}", c),
             }
         }
+    }
+
+    fn next_word(&mut self, curr: &char) -> Token {
+        let mut word: String = curr.to_string();
+
+        while let Some(&c) = self.chars.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                self.chars.next();
+                word.push(c);
+            } else {
+                break;
+            }
+        }
+
+        match word.as_str() {
+            "fn" => Token::Fn,
+            "ret" => Token::Ret,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "elif" => Token::Elif,
+            "while" => Token::While,
+            "for" => Token::For,
+            "and" => Token::And,
+            "or" => Token::Or,
+            "not" => Token::Not,
+            "var" => Token::Var,
+            "immut" => Token::Immut,
+            "in" => Token::In,
+            "try" => Token::Try,
+            "catch" => Token::Catch,
+            "as" => Token::As,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
+            "true" => Token::BoolLit(true),
+            "false" => Token::BoolLit(false),
+            _ => Token::Ident(word),
+        }
+    }
+
+    fn next_number(&mut self, curr: &char) -> Token {
+        let mut number: String = curr.to_string();
+
+        while let Some(&c) = self.chars.peek() {
+            if c.is_ascii_digit() {
+                self.chars.next();
+                number.push(c);
+            } else {
+                break;
+            }
+        }
+
+        if self.chars.peek() == Some(&'.') {
+            let mut lookahead = self.chars.clone();
+            lookahead.next();
+            if lookahead.peek() != Some(&'.') {
+                self.chars.next();
+                number.push('.');
+                while let Some(&c) = self.chars.peek() {
+                    if c.is_ascii_digit() {
+                        self.chars.next();
+                        number.push(c);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if number.contains('.') {
+            Token::FloatLit(number.parse().unwrap())
+        } else {
+            Token::IntLit(number.parse().unwrap())
+        }
+    }
+
+    fn next_string(&mut self) -> Token {
+        let mut string: String = String::new();
+        while let Some(c) = self.chars.next() {
+            if c == '"' {
+                break;
+            }
+            string.push(c);
+        }
+        Token::StrLit(string)
     }
 
     fn skip_whitespace(&mut self) {
