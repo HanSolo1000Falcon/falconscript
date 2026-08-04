@@ -10,7 +10,7 @@ fn main(args: immut str[]) ret int {
 
     var a: int = 1;
     var b: float = 2.0;
-    std:println("{} + {} = {}", a, b, (a as float) + b);
+    std:println("{} + {} = {}", a, b, a + b);
 
     for i: int in 0..10 {
         std:println("{}", i);

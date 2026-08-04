@@ -26,7 +26,6 @@ pub enum Token {
     In,
     Try,
     Catch,
-    As,
     Break,
     Continue,
 
@@ -191,7 +190,6 @@ impl<'a> Lexer<'a> {
             "in" => Token::In,
             "try" => Token::Try,
             "catch" => Token::Catch,
-            "as" => Token::As,
             "break" => Token::Break,
             "continue" => Token::Continue,
             "true" => Token::BoolLit(true),
