@@ -53,6 +53,7 @@ pub enum Token {
     FloatLit(f64),
     StrLit(String),
     BoolLit(bool),
+    NoValue,
 
     Eof,
 }
@@ -195,6 +196,7 @@ impl<'a> Lexer<'a> {
             "continue" => Token::Continue,
             "true" => Token::BoolLit(true),
             "false" => Token::BoolLit(false),
+            "none" => Token::NoValue,
             _ => Token::Ident(word),
         }
     }
