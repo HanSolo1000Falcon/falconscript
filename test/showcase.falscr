@@ -69,3 +69,7 @@ fn main(args: immut str[]) ret int {
 fn concat_string(a: str, b: str) ret str {
     ret a..b;
 }
+
+fn print_this(to_print: str) ret void {
+    std:println(to_print);
+}
