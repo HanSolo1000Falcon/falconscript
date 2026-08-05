@@ -4,7 +4,7 @@ mod parser;
 use clap::Parser;
 use crate::lexer::Token;
 use crate::lexer::Lexer;
-use crate::parser::Node;
+use crate::parser::{Expr, Node};
 
 #[derive(Debug, Parser)]
 struct Args {

@@ -274,6 +274,20 @@ impl Parser {
         }
     }
 
+    fn get_next(&mut self) -> Node {
+        match self.peek().unwrap() {
+            Token::Var => self.next_var(),
+            Token::If => self.next_if(),
+            Token::While => self.next_while(),
+            Token::For => self.next_for(),
+            Token::Ret => self.next_return(),
+            Token::Try => self.next_try_catch(),
+            Token::Break => Node::Break,
+            Token::Continue => Node::Continue,
+            _ => panic!("Expected statement"),
+        }
+    }
+
     fn next_function(&mut self) -> Node {
         let fn_name: String;
         let mut fn_args: Vec<(bool, Type, String)> = vec![];
@@ -346,16 +360,10 @@ impl Parser {
         self.advance();
 
         while let Some(tok) = self.peek() {
-            println!("{:#?}", fn_body);
-            match tok {
-                Token::RightBrace => {
-                    self.advance();
-                    break;
-                }
-                Token::Var => fn_body.push(self.next_var()),
-                Token::If => fn_body.push(self.next_if()),
-                _ => panic!("Unexpected token: {:?}", tok),
+            if tok == Token::RightBrace {
+                break;
             }
+            fn_body.push(self.get_next());
         }
 
         Node::Fn {
@@ -401,11 +409,130 @@ impl Parser {
 
     fn next_if(&mut self) -> Node {
         self.advance();
-        let condition: Vec<Node> = self.get_condition();
+        let condition: Expr = self.get_condition();
+        if self.advance().unwrap() != Token::LeftBrace {
+            panic!("Expected '{}'", "{");
+        }
+
+        let mut then_branch: Vec<Node> = vec![];
+        while let Some(tok) = self.peek() {
+            if tok == Token::RightBrace {
+                self.advance();
+                break;
+            }
+            then_branch.push(self.get_next());
+        }
+
+        let mut else_branch: Option<Vec<Node>> = None;
+        if self.peek() == Some(Token::Else) {
+            self.advance();
+            if self.advance().unwrap() != Token::LeftBrace {
+                panic!("Expected '{}'", "{");
+            }
+            else_branch = Some(vec![]);
+            while let Some(tok) = self.peek() {
+                if tok == Token::RightBrace {
+                    break;
+                }
+            }
+        } else if self.peek() == Some(Token::Elif) {
+            else_branch = Some(vec![self.next_if()]);
+        }
+
+        Node::If {
+            condition,
+            then_branch,
+            else_branch,
+        }
     }
 
-    fn get_condition(&mut self) -> Vec<Node> {
+    fn next_while(&mut self) -> Node {
+        unimplemented!()
+    }
 
+    fn next_for(&mut self) -> Node {
+        unimplemented!()
+    }
+
+    fn next_call_fn(&mut self) -> Node {
+        unimplemented!()
+    }
+
+    fn next_return(&mut self) -> Node {
+        unimplemented!()
+    }
+
+    fn next_try_catch(&mut self) -> Node {
+        unimplemented!()
+    }
+
+    fn get_condition(&mut self) -> Expr {
+        self.parse_or_condition()
+    }
+
+    fn parse_or_condition(&mut self) -> Expr {
+        let mut left: Expr = self.parse_and_condition();
+        while self.peek() == Some(Token::Or) {
+            self.advance();
+            let right: Expr = self.parse_and_condition();
+            left = Expr::Binary(Box::new(left), BinaryOp::Or, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_and_condition(&mut self) -> Expr {
+        let mut left: Expr = self.parse_not_condition();
+        while self.peek() == Some(Token::And) {
+            self.advance();
+            let right: Expr = self.parse_not_condition();
+            left = Expr::Binary(Box::new(left), BinaryOp::And, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_not_condition(&mut self) -> Expr {
+        if self.peek() == Some(Token::Not) {
+            self.advance();
+            let right: Expr = self.parse_not_condition();
+            return Expr::Unary(UnaryOp::Not, Box::new(right))
+        }
+        self.parse_comparison_condition()
+    }
+
+    fn parse_comparison_condition(&mut self) -> Expr {
+        let left = self.parse_primary_condition();
+
+        let op = match self.peek() {
+            Some(Token::DoubleEqual) => BinaryOp::Eq,
+            Some(Token::NotEqual)    => BinaryOp::Neq,
+            Some(Token::GreaterThan) => BinaryOp::Gt,
+            Some(Token::LessThan)    => BinaryOp::Lt,
+            Some(Token::GreaterEqual) => BinaryOp::Gte,
+            Some(Token::LessEqual)    => BinaryOp::Lte,
+            _ => return left,
+        };
+
+        self.advance();
+        let right = self.parse_primary_condition();
+        Expr::Binary(Box::new(left), op, Box::new(right))
+    }
+
+    fn parse_primary_condition(&mut self) -> Expr {
+        match self.advance() {
+            Some(Token::LeftParen) => {
+                let expr: Expr = self.parse_or_condition();
+                if self.advance() != Some(Token::RightParen) {
+                    panic!("Expected ')'");
+                }
+                expr
+            }
+            Some(Token::BoolLit(value)) => Expr::Bool(value),
+            Some(Token::Ident(ident)) => Expr::Ident(ident),
+            Some(Token::IntLit(value)) => Expr::Int(value),
+            Some(Token::FloatLit(value)) => Expr::Float(value),
+            Some(Token::StrLit(value)) => Expr::Str(value),
+            _ => panic!("Expected primary expression"),
+        }
     }
 }
 
@@ -413,7 +540,7 @@ impl Parser {
 mod tests {
     use crate::lexer::Token;
     use crate::lexer::Token::Ident;
-    use crate::parser::{Expr, Node, Type};
+    use crate::parser::{BinaryOp, Expr, Node, Type};
 
     #[test]
     fn test_fn_parse() {
@@ -542,5 +669,37 @@ mod tests {
                 immutable: false,
             }
         );
+    }
+
+    #[test]
+    fn test_if_parse() {
+        let mut parser_1 = crate::parser::Parser::new(vec![
+            Token::If,
+            Token::Ident(String::from("Test")),
+            Token::DoubleEqual,
+            Token::IntLit(1),
+            Token::LeftBrace,
+            Token::RightBrace,
+            Token::Elif,
+            Token::Ident(String::from("Test2")),
+            Token::DoubleEqual,
+            Token::IntLit(2),
+            Token::LeftBrace,
+            Token::RightBrace,
+            Token::Else,
+            Token::LeftBrace,
+            Token::RightBrace,
+        ]);
+        assert_eq!(parser_1.next_if(), Node::If {
+            condition: Expr::Binary(Box::new(Expr::Ident(String::from("Test"))), BinaryOp::Eq, Box::new(Expr::Int(1))),
+            then_branch: vec![],
+            else_branch: Some(vec![
+                Node::If {
+                    condition: Expr::Binary(Box::new(Expr::Ident(String::from("Test2"))), BinaryOp::Eq, Box::new(Expr::Int(2))),
+                    then_branch: vec![],
+                    else_branch: Some(vec![]),
+                }
+            ])
+        })
     }
 }
