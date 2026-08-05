@@ -198,28 +198,26 @@ impl Parser {
             },
             Token::IntLit(value) => Expr::Int(value),
             Token::FloatLit(value) => Expr::Float(value),
-            Token::Minus => {
-                match self.advance().unwrap() {
-                    Token::FloatLit(value) => Expr::Float(-value),
-                    Token::IntLit(value) => Expr::Int(-value),
-                    _ => panic!("Expected number"),
-                }
-            }
+            Token::Minus => match self.advance().unwrap() {
+                Token::FloatLit(value) => Expr::Float(-value),
+                Token::IntLit(value) => Expr::Int(-value),
+                _ => panic!("Expected number"),
+            },
             Token::StrLit(value) => Expr::Str(value),
             Token::BoolLit(value) => Expr::Bool(value),
             Token::LeftBracket => {
-                    let mut array: Vec<Expr> = vec![];
-                    loop {
-                        array.push(self.get_value());
-                        let token: Token = self.advance().unwrap();
-                        if token == Token::RightBracket {
-                            break;
-                        }
-                        if token != Token::Comma {
-                            panic!("Expected ','");
-                        }
+                let mut array: Vec<Expr> = vec![];
+                loop {
+                    array.push(self.get_value());
+                    let token: Token = self.advance().unwrap();
+                    if token == Token::RightBracket {
+                        break;
                     }
-                    Expr::Array(array)
+                    if token != Token::Comma {
+                        panic!("Expected ','");
+                    }
+                }
+                Expr::Array(array)
             }
             token => panic!("Expected value but got {:?}", token),
         }
@@ -284,7 +282,10 @@ impl Parser {
                 }
                 expr
             }
-            Some(_) => { self.pos -= 1; self.get_value() },
+            Some(_) => {
+                self.pos -= 1;
+                self.get_value()
+            }
             None => panic!("Unexpected end of input"),
         }
     }
@@ -485,7 +486,11 @@ impl Parser {
         Node::If {
             condition,
             then_branch,
-            else_branch: if else_branch.len() == 0 { None } else { Some(else_branch) },
+            else_branch: if else_branch.len() == 0 {
+                None
+            } else {
+                Some(else_branch)
+            },
         }
     }
 
@@ -681,7 +686,10 @@ impl Parser {
                 }
                 expr
             }
-            Some(_) => { self.pos -= 1; self.parse_minus_op() },
+            Some(_) => {
+                self.pos -= 1;
+                self.parse_minus_op()
+            }
             _ => panic!("Expected primary expression"),
         }
     }

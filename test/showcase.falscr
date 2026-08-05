@@ -12,6 +12,13 @@ fn main(args: immut str[]) ret int {
     std:println("world!");
     std:println(concat_string("This is", " falconscript!"));
 
+    var y: str = none;
+    if y == none {
+        std:println("y is none");
+    } else {
+        std:println("y is not none");
+    }
+
     if true {} elif false {} else {}
 
     var user_input: str = std:getln();
