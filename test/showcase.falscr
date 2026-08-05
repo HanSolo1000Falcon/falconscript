@@ -8,7 +8,7 @@ fn main(args: immut str[]) ret int {
     std:println("world!");
     std:println(concat_string("This is", " falconscript!"));
 
-    var a: int = 1;
+    var a: int = -1;
     var b: float = 2.0;
     std:println("{} + {} = {}", a, b, a + b);
 

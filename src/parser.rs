@@ -1,6 +1,4 @@
 use crate::lexer::Token;
-use std::iter::Peekable;
-use std::vec::IntoIter;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
@@ -101,14 +99,29 @@ pub enum Node {
 }
 
 pub struct Parser {
-    tokens: Peekable<IntoIter<Token>>,
+    tokens: Vec<Token>,
+    pos: usize,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser {
-            tokens: tokens.into_iter().peekable(),
+        Parser { tokens, pos: 0 }
+    }
+
+    fn peek(&self) -> Option<Token> {
+        self.tokens.get(self.pos).cloned()
+    }
+
+    fn peek_at(&self, offset: usize) -> Option<Token> {
+        self.tokens.get(self.pos + offset).cloned()
+    }
+
+    fn advance(&mut self) -> Option<Token> {
+        let tok: Option<Token> = self.tokens.get(self.pos).cloned();
+        if tok.is_some() {
+            self.pos += 1;
         }
+        tok
     }
 
     pub fn parse(&mut self) -> Vec<Node> {
@@ -125,7 +138,7 @@ impl Parser {
     }
 
     fn next_node(&mut self) -> Node {
-        match self.tokens.next() {
+        match self.advance() {
             None => Node::Eot,
             Some(tok) => match tok {
                 Token::Fn => self.next_function(),
@@ -139,7 +152,7 @@ impl Parser {
         let mut type_: Type;
 
         loop {
-            let token: Token = self.get_next_token();
+            let token: Token = self.advance().unwrap();
             if token == Token::Immut {
                 if immutable {
                     panic!("Multiple 'immut' keywords");
@@ -158,9 +171,9 @@ impl Parser {
                     _ => panic!("Invalid type: {}", type_name),
                 };
 
-                if self.tokens.peek() == Some(&Token::LeftBracket) {
-                    self.tokens.next();
-                    if self.get_next_token() != Token::RightBracket {
+                if self.peek().unwrap() == Token::LeftBracket {
+                    self.advance();
+                    if self.advance().unwrap() != Token::RightBracket {
                         panic!("Expected ']'");
                     }
                     type_ = Type::Array(Box::new(type_));
@@ -173,9 +186,37 @@ impl Parser {
         (immutable, type_)
     }
 
+    fn is_binary_op(&self, token: &Token) -> bool {
+        matches!(token, Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent)
+    }
+
+    fn is_unary_op(&self, token: &Token) -> bool {
+        matches!(token, Token::Not | Token::Minus)
+    }
+
+    fn to_binary_op(&self, token: &Token) -> Option<BinaryOp> {
+        match token {
+            Token::Plus => Some(BinaryOp::Add),
+            Token::Minus => Some(BinaryOp::Sub),
+            Token::Star => Some(BinaryOp::Mul),
+            Token::Slash => Some(BinaryOp::Div),
+            Token::Percent => Some(BinaryOp::Mod),
+            _ => None,
+        }
+    }
+
+    fn to_unary_op(&self, token: &Token) -> Option<UnaryOp> {
+        match token {
+            Token::Not => Some(UnaryOp::Not),
+            Token::Minus => Some(UnaryOp::Neg),
+            _ => None,
+        }
+    }
+
     fn get_value(&mut self, target_type: &Type) -> Expr {
-        match self.get_next_token() {
+        match self.advance().unwrap() {
             Token::NoValue => Expr::NoValue,
+            Token::Ident(ident) => Expr::Ident(ident),
             Token::IntLit(value) if matches!(target_type, &Type::Int | &Type::Void) => {
                 Expr::Int(value)
             }
@@ -197,7 +238,7 @@ impl Parser {
                     let mut array: Vec<Expr> = vec![];
                     loop {
                         array.push(self.get_value(&inner_type));
-                        let token: Token = self.get_next_token();
+                        let token: Token = self.advance().unwrap();
                         if token == Token::RightBracket {
                             break;
                         }
@@ -210,7 +251,7 @@ impl Parser {
                     let mut array: Vec<Expr> = vec![];
                     loop {
                         array.push(self.get_value(&Type::Void));
-                        let token: Token = self.get_next_token();
+                        let token: Token = self.advance().unwrap();
                         if token == Token::RightBracket {
                             break;
                         }
@@ -223,29 +264,12 @@ impl Parser {
                     panic!("Invalid type")
                 }
             }
-            Token::Ident(ident) if target_type == &Type::Void => {
-                
-            }
             _ => panic!("Expected value of correct type"),
         }
     }
 
-    fn get_next_token(&mut self) -> Token {
-        match self.tokens.next() {
-            Some(tok) => tok,
-            None => panic!("Unexpected end of file"),
-        }
-    }
-
-    fn peek_next_token(&mut self) -> Token {
-        match self.tokens.peek() {
-            Some(tok) => tok.clone(),
-            None => panic!("Unexpected end of file"),
-        }
-    }
-
     fn clean_semicolon(&mut self) {
-        if self.get_next_token() != Token::Semicolon {
+        if self.advance().unwrap() != Token::Semicolon {
             panic!("Expected ';'");
         }
     }
@@ -256,13 +280,13 @@ impl Parser {
         let mut fn_body: Vec<Node> = vec![];
         let fn_returns: Type;
 
-        if let Token::Ident(name) = self.get_next_token() {
+        if let Token::Ident(name) = self.advance().unwrap() {
             fn_name = name
         } else {
             panic!("Expected function name");
         }
 
-        if self.get_next_token() != Token::LeftParen {
+        if self.advance().unwrap() != Token::LeftParen {
             panic!("Expected '('");
         }
 
@@ -271,7 +295,7 @@ impl Parser {
             let arg_immutable: bool;
             let arg_type: Type;
 
-            let mut token: Token = self.get_next_token();
+            let mut token: Token = self.advance().unwrap();
 
             if token == Token::RightParen {
                 break;
@@ -283,7 +307,7 @@ impl Parser {
                 panic!("Expected argument name");
             }
 
-            token = self.get_next_token();
+            token = self.advance().unwrap();
 
             if token != Token::Colon {
                 panic!("Expected ':'");
@@ -293,7 +317,7 @@ impl Parser {
 
             fn_args.push((arg_immutable, arg_type, arg_name));
 
-            match self.tokens.next() {
+            match self.advance() {
                 Some(Token::Comma) => {}
                 Some(Token::RightParen) => break,
                 _ => panic!("Expected ',' or ')'"),
@@ -301,11 +325,11 @@ impl Parser {
         }
 
         {
-            if self.get_next_token() != Token::Ret {
+            if self.advance().unwrap() != Token::Ret {
                 panic!("Expected 'ret'");
             }
 
-            if let Token::Ident(type_) = self.get_next_token() {
+            if let Token::Ident(type_) = self.advance().unwrap() {
                 fn_returns = match type_.as_ref() {
                     "int" => Type::Int,
                     "float" => Type::Float,
@@ -319,20 +343,17 @@ impl Parser {
             }
         }
 
-        self.tokens.next();
+        self.advance();
 
-        while let Some(tok) = self.tokens.peek() {
+        while let Some(tok) = self.peek() {
             println!("{:#?}", fn_body);
             match tok {
                 Token::RightBrace => {
-                    self.tokens.next();
+                    self.advance();
                     break;
                 }
                 Token::Var => fn_body.push(self.next_var()),
-                Token::Ident(_) => {
-                    fn_body.push(self.next_ident());
-                    self.clean_semicolon();
-                }
+                Token::If => fn_body.push(self.next_if()),
                 _ => panic!("Unexpected token: {:?}", tok),
             }
         }
@@ -348,21 +369,21 @@ impl Parser {
     fn next_var(&mut self) -> Node {
         let var_name: String;
 
-        self.tokens.next();
+        self.advance();
 
-        if let Token::Ident(name) = self.get_next_token() {
+        if let Token::Ident(name) = self.advance().unwrap() {
             var_name = name;
         } else {
             panic!("Expected variable name");
         }
 
-        if self.get_next_token() != Token::Colon {
+        if self.advance().unwrap() != Token::Colon {
             panic!("Expected ':'");
         }
 
         let (var_immutable, var_type) = self.get_type();
 
-        if self.get_next_token() != Token::Equal {
+        if self.advance().unwrap() != Token::Equal {
             panic!("Expected '='");
         }
 
@@ -378,67 +399,13 @@ impl Parser {
         }
     }
 
-    fn next_ident(&mut self) -> Node {
-        let name: String = match self.get_next_token() {
-            Token::Ident(n) => n,
-            _ => panic!("Expected identifier"),
-        };
-
-        let mut current: Expr = Expr::Ident(name.clone());
-        let mut node: Option<Node> = None;
-
-        loop {
-            match self.peek_next_token() {
-                Token::LeftParen => {
-                    self.tokens.next();
-                    node = Some(Node::CallFn {
-                        callee: Expr::NoValue,
-                        name: name.clone(),
-                        args: self.parse_args(),
-                    });
-                    current = Expr::Node(Box::new(node.clone().unwrap()));
-                }
-                Token::Colon => {
-                    self.tokens.next();
-                    let fn_name: String = match self.get_next_token() {
-                        Token::Ident(n) => n,
-                        _ => panic!("Expected function name"),
-                    };
-                    if self.get_next_token() != Token::LeftParen {
-                        panic!("Expected '('");
-                    }
-                    node = Some(Node::CallFn {
-                        callee: current.clone(),
-                        name: fn_name,
-                        args: self.parse_args(),
-                    });
-                    current = Expr::Node(Box::new(node.clone().unwrap()));
-                }
-                Token::Equal => {
-                    self.tokens.next();
-                    return Node::Assign {
-                        name,
-                        value: self.get_value(&Type::Void),
-                    };
-                }
-                _ => break,
-            }
-        }
-
-        node.unwrap_or_else(|| panic!("Expected follow up on the identifier: {}", name))
+    fn next_if(&mut self) -> Node {
+        self.advance();
+        let condition: Vec<Node> = self.get_condition();
     }
 
-    fn parse_args(&mut self) -> Vec<Expr> {
-        let mut args: Vec<Expr> = vec![];
-        loop {
-            args.push(self.get_value(&Type::Void));
-            match self.get_next_token() {
-                Token::RightParen => break,
-                Token::Comma => continue,
-                t => panic!("Expected ',' or ')': {:?}", t),
-            }
-        }
-        args
+    fn get_condition(&mut self) -> Vec<Node> {
+
     }
 }
 
@@ -575,14 +542,5 @@ mod tests {
                 immutable: false,
             }
         );
-    }
-
-    #[test]
-    fn test_ident_parse() {
-        let mut parser_1 = crate::parser::Parser::new(vec![
-            Ident(String::from("main")),
-            Token::LeftParen,
-            Ident(String::from("Test")),
-        ]);
     }
 }
