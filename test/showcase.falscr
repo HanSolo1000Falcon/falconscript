@@ -13,6 +13,14 @@ fn main(args: immut str[]) ret int {
     std:println(concat_string("This is", " falconscript!"));
 
     var y: str = none;
+    if std:random() > 0.5 {
+        y = "This is a string";
+    }
+
+    if args:len() > 0 {
+        std:println("{}", std:read_from_file(args:at(0)));
+    }
+
     if y == none {
         std:println("y is none");
     } else {
@@ -39,7 +47,7 @@ fn main(args: immut str[]) ret int {
 
     var should_break: bool = false;
     while true {
-        std:println("Hello,");
+        std:println("Should we break out of this loop? {}", should_break);
         should_break = std:random() > 0.5;
         if should_break {
             break;
@@ -71,9 +79,9 @@ fn main(args: immut str[]) ret int {
     }
 
     if std:random() > 0.5 {
-        std:exit(0);
+        std:exit(0, "Exiting with code 0");
     } elif std:random() > 0.25 {
-        std:exit(1, "This is an error");
+        std:exit(1, "Exiting with code 1");
     }
 
     ret 0;

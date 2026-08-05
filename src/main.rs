@@ -1,8 +1,10 @@
 mod lexer;
 mod parser;
 mod interpreter;
+mod falconscript_stdlib;
+mod types;
 
-use std::io::{Stdout, Write};
+use std::io::Stdout;
 use clap::Parser;
 use crate::interpreter::Interpreter;
 use crate::lexer::{Lexer, Token};
@@ -20,6 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tokens: Vec<Token> = Lexer::new(&file_content).tokenize();
     let nodes: Vec<Node> = parser::Parser::new(tokens).parse();
     let mut interpreter: Interpreter<Stdout> = Interpreter::new(nodes, std::io::stdout());
-    interpreter.run();
+    interpreter.run(&args.program_args);
     Ok(())
 }

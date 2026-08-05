@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.5", features = ["derive"] }
+random = "0.14.1"
+rand = "0.10.2"
