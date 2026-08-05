@@ -12,6 +12,11 @@ fn main(args: immut str[]) ret int {
     std:println("world!");
     std:println(concat_string("This is", " falconscript!"));
 
+    if true {} elif false {} else {}
+
+    var user_input: str = std:getln();
+    std:println("You entered: {}", user_input);
+
     var a: int = -1;
     var b: float = 2.0;
     std:println("{} + {} = {}", a, b, a + b);
@@ -48,6 +53,7 @@ fn main(args: immut str[]) ret int {
     std:println("{}", str_arr:len());
     str_arr:rm(0);
     std:println("{}", str_arr:len());
+    std:println("{}", str_arr:at(0));
 
     if std:random() > 0.5 {
         std:println("true");
@@ -58,20 +64,16 @@ fn main(args: immut str[]) ret int {
     }
 
     if std:random() > 0.5 {
-        std:throw("This is an error");
-    }
-
-    try {
-        std:throw("This is an error");
-    } catch e: str {
-        std:println(e);
+        std:exit(0);
+    } elif std:random() > 0.25 {
+        std:exit(1, "This is an error");
     }
 
     ret 0;
 }
 
 fn concat_string(a: str, b: str) ret str {
-    ret a..b;
+    ret a + b;
 }
 
 fn print_this(to_print: str) ret void {

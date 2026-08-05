@@ -22,6 +22,7 @@ pub enum Expr {
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Node(Box<Node>),
+    Range(i64, i64),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -78,7 +79,7 @@ pub enum Node {
         body: Vec<Node>,
     },
     For {
-        var: String,
+        var: Box<Node>,
         iterable: Expr,
         body: Vec<Node>,
     },
@@ -90,10 +91,6 @@ pub enum Node {
     Return(Expr),
     Break,
     Continue,
-    Try {
-        body: Vec<Node>,
-        catch: Option<(String, Vec<Node>)>,
-    },
 
     Eot,
 }
@@ -124,25 +121,6 @@ impl Parser {
         tok
     }
 
-    fn is_binary_op(&self, tok: &Token) -> bool {
-        matches!(
-            tok,
-            Token::Plus
-                | Token::Minus
-                | Token::Star
-                | Token::Slash
-                | Token::Percent
-                | Token::And
-                | Token::Or
-                | Token::DoubleEqual
-                | Token::NotEqual
-                | Token::GreaterThan
-                | Token::LessThan
-                | Token::GreaterEqual
-                | Token::LessEqual
-        )
-    }
-
     pub fn parse(&mut self) -> Vec<Node> {
         let mut nodes: Vec<Node> = vec![];
         loop {
@@ -151,7 +129,6 @@ impl Parser {
                 break;
             }
             nodes.push(node);
-            println!("{:#?}", nodes);
         }
         nodes
     }
@@ -205,7 +182,11 @@ impl Parser {
         (immutable, type_)
     }
 
-    fn get_value(&mut self, target_type: &Type) -> Expr {
+    fn get_value_with_conditions_and_ops(&mut self) -> Expr {
+        self.parse_or_condition()
+    }
+
+    fn get_value(&mut self) -> Expr {
         match self.advance().unwrap() {
             Token::NoValue => Expr::NoValue,
             Token::Ident(ident) => match self.peek().unwrap() {
@@ -215,34 +196,21 @@ impl Parser {
                 }
                 _ => Expr::Ident(ident),
             },
-            Token::IntLit(value) if matches!(target_type, &Type::Int | &Type::Void) => {
-                Expr::Int(value)
-            }
-            Token::FloatLit(value) if matches!(target_type, &Type::Float | &Type::Void) => {
-                Expr::Float(value)
-            }
-            Token::Minus if matches!(target_type, &Type::Float | &Type::Int | &Type::Void) => {
+            Token::IntLit(value) => Expr::Int(value),
+            Token::FloatLit(value) => Expr::Float(value),
+            Token::Minus => {
                 match self.advance().unwrap() {
                     Token::FloatLit(value) => Expr::Float(-value),
                     Token::IntLit(value) => Expr::Int(-value),
                     _ => panic!("Expected number"),
                 }
             }
-            Token::StrLit(value) if matches!(target_type, &Type::Str | &Type::Void) => {
-                Expr::Str(value)
-            }
-            Token::BoolLit(value) if matches!(target_type, &Type::Bool | &Type::Void) => {
-                Expr::Bool(value)
-            }
+            Token::StrLit(value) => Expr::Str(value),
+            Token::BoolLit(value) => Expr::Bool(value),
             Token::LeftBracket => {
-                if let Type::Array(inner_type) = target_type {
-                    if let Type::Array(_) = **inner_type {
-                        panic!("Nested arrays are not supported");
-                    }
-
                     let mut array: Vec<Expr> = vec![];
                     loop {
-                        array.push(self.get_value(&inner_type));
+                        array.push(self.get_value());
                         let token: Token = self.advance().unwrap();
                         if token == Token::RightBracket {
                             break;
@@ -252,27 +220,8 @@ impl Parser {
                         }
                     }
                     Expr::Array(array)
-                } else if target_type == &Type::Void {
-                    let mut array: Vec<Expr> = vec![];
-                    loop {
-                        array.push(self.get_value(&Type::Void));
-                        let token: Token = self.advance().unwrap();
-                        if token == Token::RightBracket {
-                            break;
-                        }
-                        if token != Token::Comma {
-                            panic!("Expected ','");
-                        }
-                    }
-                    Expr::Array(array)
-                } else {
-                    panic!("Invalid type")
-                }
             }
-            token => panic!(
-                "Expected value of correct type, got type {:?} which doesn't match token {:?}",
-                target_type, token
-            ),
+            token => panic!("Expected value but got {:?}", token),
         }
     }
 
@@ -335,14 +284,15 @@ impl Parser {
                 }
                 expr
             }
-            Some(_) => { self.pos -= 1; self.get_value(&Type::Void) },
+            Some(_) => { self.pos -= 1; self.get_value() },
             None => panic!("Unexpected end of input"),
         }
     }
 
     fn clean_semicolon(&mut self) {
-        if self.advance().unwrap() != Token::Semicolon {
-            panic!("Expected ';'");
+        match self.advance().unwrap() {
+            Token::Semicolon => {}
+            token => panic!("Expected ';' but got {:?}", token),
         }
     }
 
@@ -353,7 +303,6 @@ impl Parser {
             Token::While => self.next_while(),
             Token::For => self.next_for(),
             Token::Ret => self.next_return(),
-            Token::Try => self.next_try_catch(),
             Token::Break => {
                 self.advance();
                 self.clean_semicolon();
@@ -373,7 +322,7 @@ impl Parser {
                 self.clean_semicolon();
                 to_return
             }
-            _ => panic!("Expected statement"),
+            token => panic!("Expected statement, got {:?}", token),
         }
     }
 
@@ -450,8 +399,8 @@ impl Parser {
         self.advance();
 
         while let Some(tok) = self.peek() {
-            println!("{:#?}", fn_body);
             if tok == Token::RightBrace {
+                self.advance();
                 break;
             }
             fn_body.push(self.get_next());
@@ -486,7 +435,7 @@ impl Parser {
             panic!("Expected '='");
         }
 
-        let var_value: Expr = self.parse_minus_op();
+        let var_value: Expr = self.get_value_with_conditions_and_ops();
 
         self.clean_semicolon();
 
@@ -500,7 +449,7 @@ impl Parser {
 
     fn next_if(&mut self) -> Node {
         self.advance();
-        let condition: Expr = self.get_condition();
+        let condition: Expr = self.get_value_with_conditions_and_ops();
         if self.advance().unwrap() != Token::LeftBrace {
             panic!("Expected '{}'", "{");
         }
@@ -514,32 +463,35 @@ impl Parser {
             then_branch.push(self.get_next());
         }
 
-        let mut else_branch: Option<Vec<Node>> = None;
+        let mut else_branch: Vec<Node> = vec![];
         if self.peek() == Some(Token::Else) {
             self.advance();
-            if self.advance().unwrap() != Token::LeftBrace {
-                panic!("Expected '{}'", "{");
+            if self.peek().unwrap() != Token::LeftBrace {
+                panic!("Expected '{}' but got {:?}", "{", self.peek().unwrap());
             }
-            else_branch = Some(vec![]);
+            self.advance();
             while let Some(tok) = self.peek() {
                 if tok == Token::RightBrace {
+                    self.advance();
                     break;
                 }
+
+                else_branch.push(self.get_next());
             }
         } else if self.peek() == Some(Token::Elif) {
-            else_branch = Some(vec![self.next_if()]);
+            else_branch = vec![self.next_if()];
         }
 
         Node::If {
             condition,
             then_branch,
-            else_branch,
+            else_branch: if else_branch.len() == 0 { None } else { Some(else_branch) },
         }
     }
 
     fn next_while(&mut self) -> Node {
         self.advance();
-        let condition: Expr = self.get_condition();
+        let condition: Expr = self.get_value_with_conditions_and_ops();
         if self.advance().unwrap() != Token::LeftBrace {
             panic!("Expected '{}'", "{");
         }
@@ -557,7 +509,56 @@ impl Parser {
     }
 
     fn next_for(&mut self) -> Node {
-        unimplemented!()
+        self.advance();
+        let init_name: String = match self.advance().unwrap() {
+            Token::Ident(name) => name,
+            token => panic!("Expected variable name but got {:?}", token),
+        };
+        if self.advance().unwrap() != Token::Colon {
+            panic!("Expected ':'");
+        }
+        let (init_immutable, init_type) = self.get_type();
+        let init = Node::Var {
+            name: init_name,
+            type_: init_type,
+            value: Expr::NoValue,
+            immutable: init_immutable,
+        };
+        if self.advance().unwrap() != Token::In {
+            panic!("Expected 'in'");
+        }
+
+        let range: Expr;
+        match self.advance().unwrap() {
+            Token::IntLit(start_value) => {
+                if self.advance().unwrap() != Token::DoublePeriod {
+                    panic!("Expected '..' in the int range");
+                }
+                match self.advance().unwrap() {
+                    Token::IntLit(end_value) => range = Expr::Range(start_value, end_value),
+                    token => panic!("Expected int literal but got {:?}", token),
+                }
+            }
+            Token::Ident(name) => range = Expr::Ident(name),
+            token => panic!("Expected int literal or variable name but got {:?}", token),
+        }
+
+        let mut body: Vec<Node> = vec![];
+        if self.advance().unwrap() != Token::LeftBrace {
+            panic!("Expected '{}'", "{");
+        }
+        while let Some(tok) = self.peek() {
+            if tok == Token::RightBrace {
+                self.advance();
+                break;
+            }
+            body.push(self.get_next());
+        }
+        Node::For {
+            var: Box::new(init),
+            iterable: range,
+            body,
+        }
     }
 
     fn next_call_fn(&mut self) -> Node {
@@ -592,7 +593,7 @@ impl Parser {
                     panic!("Expected '=' got {:?}", self.peek().unwrap());
                 }
                 self.advance();
-                let value: Expr = self.parse_minus_op();
+                let value: Expr = self.get_value_with_conditions_and_ops();
                 Node::Assign { name, value }
             }
             token => panic!("Expected variable name but got {:?}", token),
@@ -600,20 +601,20 @@ impl Parser {
     }
 
     fn next_return(&mut self) -> Node {
-        unimplemented!()
-    }
-
-    fn next_try_catch(&mut self) -> Node {
-        unimplemented!()
+        self.advance();
+        let value: Expr = self.get_value_with_conditions_and_ops();
+        self.clean_semicolon();
+        Node::Return(value)
     }
 
     fn collect_args(&mut self) -> Vec<Expr> {
         let mut args: Vec<Expr> = vec![];
         loop {
             if self.peek().unwrap() == Token::RightParen {
+                self.advance();
                 break;
             }
-            args.push(self.parse_minus_op());
+            args.push(self.get_value_with_conditions_and_ops());
             match self.advance() {
                 Some(Token::Comma) => {}
                 Some(Token::RightParen) => break,
@@ -622,10 +623,6 @@ impl Parser {
             }
         }
         args
-    }
-
-    fn get_condition(&mut self) -> Expr {
-        self.parse_or_condition()
     }
 
     fn parse_or_condition(&mut self) -> Expr {
@@ -684,7 +681,7 @@ impl Parser {
                 }
                 expr
             }
-            Some(_) => { self.pos -= 1; self.get_value(&Type::Void) },
+            Some(_) => { self.pos -= 1; self.parse_minus_op() },
             _ => panic!("Expected primary expression"),
         }
     }
