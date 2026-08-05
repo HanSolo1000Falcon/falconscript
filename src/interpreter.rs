@@ -4,6 +4,7 @@ use crate::types::falconscript_array::eval_array_call;
 use std::collections::HashMap;
 use std::io::Write;
 use std::{fmt, io};
+use crate::types::falconscript_str::eval_str_call;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -234,9 +235,8 @@ impl<W: Write> Interpreter<W> {
                     if env.contains_key(callee_name) {
                         let callee_info = env.get(callee_name).unwrap();
                         return match callee_info.2 {
-                            Type::Array(_) => {
-                                eval_array_call(callee_name, name, &args_as_vals, env)
-                            }
+                            Type::Array(_) => eval_array_call(callee_name, name, &args_as_vals, env),
+                            Type::Str => eval_str_call(callee_name, name, &args_as_vals, env),
                             _ => panic!("Invalid function call: {}:{}", callee_name, name),
                         };
                     }

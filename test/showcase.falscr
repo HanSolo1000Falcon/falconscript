@@ -11,6 +11,8 @@ fn main(args: immut str[]) ret int {
     std:print("Hello, ");
     std:println("world!");
     std:println(concat_string("This is", " falconscript!"));
+    var hello: str = "Hello";
+    std:println("{} {}", hello:len(), hello:at(0));
 
     var y: str = none;
     if std:random() > 0.5 {
