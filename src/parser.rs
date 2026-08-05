@@ -124,6 +124,25 @@ impl Parser {
         tok
     }
 
+    fn is_binary_op(&self, tok: &Token) -> bool {
+        matches!(
+            tok,
+            Token::Plus
+                | Token::Minus
+                | Token::Star
+                | Token::Slash
+                | Token::Percent
+                | Token::And
+                | Token::Or
+                | Token::DoubleEqual
+                | Token::NotEqual
+                | Token::GreaterThan
+                | Token::LessThan
+                | Token::GreaterEqual
+                | Token::LessEqual
+        )
+    }
+
     pub fn parse(&mut self) -> Vec<Node> {
         let mut nodes: Vec<Node> = vec![];
         loop {
@@ -186,42 +205,28 @@ impl Parser {
         (immutable, type_)
     }
 
-    fn is_binary_op(&self, token: &Token) -> bool {
-        matches!(token, Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent)
-    }
-
-    fn is_unary_op(&self, token: &Token) -> bool {
-        matches!(token, Token::Not | Token::Minus)
-    }
-
-    fn to_binary_op(&self, token: &Token) -> Option<BinaryOp> {
-        match token {
-            Token::Plus => Some(BinaryOp::Add),
-            Token::Minus => Some(BinaryOp::Sub),
-            Token::Star => Some(BinaryOp::Mul),
-            Token::Slash => Some(BinaryOp::Div),
-            Token::Percent => Some(BinaryOp::Mod),
-            _ => None,
-        }
-    }
-
-    fn to_unary_op(&self, token: &Token) -> Option<UnaryOp> {
-        match token {
-            Token::Not => Some(UnaryOp::Not),
-            Token::Minus => Some(UnaryOp::Neg),
-            _ => None,
-        }
-    }
-
     fn get_value(&mut self, target_type: &Type) -> Expr {
         match self.advance().unwrap() {
             Token::NoValue => Expr::NoValue,
-            Token::Ident(ident) => Expr::Ident(ident),
+            Token::Ident(ident) => match self.peek().unwrap() {
+                Token::Colon | Token::LeftParen => {
+                    self.pos -= 1;
+                    Expr::Node(Box::new(self.next_call_fn()))
+                }
+                _ => Expr::Ident(ident),
+            },
             Token::IntLit(value) if matches!(target_type, &Type::Int | &Type::Void) => {
                 Expr::Int(value)
             }
             Token::FloatLit(value) if matches!(target_type, &Type::Float | &Type::Void) => {
                 Expr::Float(value)
+            }
+            Token::Minus if matches!(target_type, &Type::Float | &Type::Int | &Type::Void) => {
+                match self.advance().unwrap() {
+                    Token::FloatLit(value) => Expr::Float(-value),
+                    Token::IntLit(value) => Expr::Int(-value),
+                    _ => panic!("Expected number"),
+                }
             }
             Token::StrLit(value) if matches!(target_type, &Type::Str | &Type::Void) => {
                 Expr::Str(value)
@@ -264,7 +269,74 @@ impl Parser {
                     panic!("Invalid type")
                 }
             }
-            _ => panic!("Expected value of correct type"),
+            token => panic!(
+                "Expected value of correct type, got type {:?} which doesn't match token {:?}",
+                target_type, token
+            ),
+        }
+    }
+
+    fn parse_minus_op(&mut self) -> Expr {
+        let mut left: Expr = self.parse_plus_op();
+        while self.peek() == Some(Token::Minus) {
+            self.advance();
+            let right: Expr = self.parse_plus_op();
+            left = Expr::Binary(Box::new(left), BinaryOp::Sub, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_plus_op(&mut self) -> Expr {
+        let mut left: Expr = self.parse_div_op();
+        while self.peek() == Some(Token::Plus) {
+            self.advance();
+            let right: Expr = self.parse_div_op();
+            left = Expr::Binary(Box::new(left), BinaryOp::Add, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_div_op(&mut self) -> Expr {
+        let mut left: Expr = self.parse_mod_op();
+        while self.peek() == Some(Token::Slash) {
+            self.advance();
+            let right: Expr = self.parse_mod_op();
+            left = Expr::Binary(Box::new(left), BinaryOp::Div, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_mod_op(&mut self) -> Expr {
+        let mut left: Expr = self.parse_mul_op();
+        while self.peek() == Some(Token::Percent) {
+            self.advance();
+            let right: Expr = self.parse_mul_op();
+            left = Expr::Binary(Box::new(left), BinaryOp::Mod, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_mul_op(&mut self) -> Expr {
+        let mut left: Expr = self.parse_primary_op();
+        while self.peek() == Some(Token::Star) {
+            self.advance();
+            let right: Expr = self.parse_primary_op();
+            left = Expr::Binary(Box::new(left), BinaryOp::Mul, Box::new(right));
+        }
+        left
+    }
+
+    fn parse_primary_op(&mut self) -> Expr {
+        match self.advance() {
+            Some(Token::LeftParen) => {
+                let expr: Expr = self.parse_minus_op();
+                if self.advance() != Some(Token::RightParen) {
+                    panic!("Expected ')'");
+                }
+                expr
+            }
+            Some(_) => { self.pos -= 1; self.get_value(&Type::Void) },
+            None => panic!("Unexpected end of input"),
         }
     }
 
@@ -282,8 +354,25 @@ impl Parser {
             Token::For => self.next_for(),
             Token::Ret => self.next_return(),
             Token::Try => self.next_try_catch(),
-            Token::Break => Node::Break,
-            Token::Continue => Node::Continue,
+            Token::Break => {
+                self.advance();
+                self.clean_semicolon();
+                Node::Break
+            }
+            Token::Continue => {
+                self.advance();
+                self.clean_semicolon();
+                Node::Continue
+            }
+            Token::Ident(_) => {
+                let to_return: Node = match self.peek_at(1).unwrap() {
+                    Token::Colon | Token::LeftParen => self.next_call_fn(),
+                    Token::Equal => self.next_assign(),
+                    _ => panic!("Unexpected token: {:?}", self.peek_at(2).unwrap()),
+                };
+                self.clean_semicolon();
+                to_return
+            }
             _ => panic!("Expected statement"),
         }
     }
@@ -334,7 +423,8 @@ impl Parser {
             match self.advance() {
                 Some(Token::Comma) => {}
                 Some(Token::RightParen) => break,
-                _ => panic!("Expected ',' or ')'"),
+                Some(token) => panic!("Expected ',' or ')' but got {:?}", token),
+                None => panic!("Unexpected end of input"),
             }
         }
 
@@ -350,7 +440,7 @@ impl Parser {
                     "str" => Type::Str,
                     "bool" => Type::Bool,
                     "void" => Type::Void,
-                    _ => panic!("Invalid return type: {}", type_),
+                    _ => panic!("Invalid return type: {:?}", type_),
                 };
             } else {
                 panic!("Expected return type");
@@ -360,6 +450,7 @@ impl Parser {
         self.advance();
 
         while let Some(tok) = self.peek() {
+            println!("{:#?}", fn_body);
             if tok == Token::RightBrace {
                 break;
             }
@@ -395,7 +486,7 @@ impl Parser {
             panic!("Expected '='");
         }
 
-        let var_value: Expr = self.get_value(&var_type);
+        let var_value: Expr = self.parse_minus_op();
 
         self.clean_semicolon();
 
@@ -447,7 +538,22 @@ impl Parser {
     }
 
     fn next_while(&mut self) -> Node {
-        unimplemented!()
+        self.advance();
+        let condition: Expr = self.get_condition();
+        if self.advance().unwrap() != Token::LeftBrace {
+            panic!("Expected '{}'", "{");
+        }
+
+        let mut body: Vec<Node> = vec![];
+        while let Some(tok) = self.peek() {
+            if tok == Token::RightBrace {
+                self.advance();
+                break;
+            }
+            body.push(self.get_next());
+        }
+
+        Node::While { condition, body }
     }
 
     fn next_for(&mut self) -> Node {
@@ -455,7 +561,42 @@ impl Parser {
     }
 
     fn next_call_fn(&mut self) -> Node {
-        unimplemented!()
+        let mut callee: Expr = Expr::NoValue;
+
+        if self.peek_at(1).unwrap() == Token::Colon {
+            callee = match self.advance().unwrap() {
+                Token::Ident(name) => Expr::Ident(name),
+                _ => panic!("Expected callee name"),
+            };
+            self.advance();
+        }
+
+        if self.peek_at(1).unwrap() != Token::LeftParen {
+            panic!("Expected '(' but got {:?}", self.peek_at(1).unwrap());
+        }
+
+        let name: String = match self.advance().unwrap() {
+            Token::Ident(name) => name,
+            _ => panic!("Expected function name"),
+        };
+
+        self.advance();
+        let args: Vec<Expr> = self.collect_args();
+        Node::CallFn { callee, name, args }
+    }
+
+    fn next_assign(&mut self) -> Node {
+        match self.advance().unwrap() {
+            Token::Ident(name) => {
+                if self.peek().unwrap() != Token::Equal {
+                    panic!("Expected '=' got {:?}", self.peek().unwrap());
+                }
+                self.advance();
+                let value: Expr = self.parse_minus_op();
+                Node::Assign { name, value }
+            }
+            token => panic!("Expected variable name but got {:?}", token),
+        }
     }
 
     fn next_return(&mut self) -> Node {
@@ -464,6 +605,23 @@ impl Parser {
 
     fn next_try_catch(&mut self) -> Node {
         unimplemented!()
+    }
+
+    fn collect_args(&mut self) -> Vec<Expr> {
+        let mut args: Vec<Expr> = vec![];
+        loop {
+            if self.peek().unwrap() == Token::RightParen {
+                break;
+            }
+            args.push(self.parse_minus_op());
+            match self.advance() {
+                Some(Token::Comma) => {}
+                Some(Token::RightParen) => break,
+                Some(token) => panic!("Expected ',' or ')' but got {:?}", token),
+                None => panic!("Unexpected end of input"),
+            }
+        }
+        args
     }
 
     fn get_condition(&mut self) -> Expr {
@@ -494,7 +652,7 @@ impl Parser {
         if self.peek() == Some(Token::Not) {
             self.advance();
             let right: Expr = self.parse_not_condition();
-            return Expr::Unary(UnaryOp::Not, Box::new(right))
+            return Expr::Unary(UnaryOp::Not, Box::new(right));
         }
         self.parse_comparison_condition()
     }
@@ -504,11 +662,11 @@ impl Parser {
 
         let op = match self.peek() {
             Some(Token::DoubleEqual) => BinaryOp::Eq,
-            Some(Token::NotEqual)    => BinaryOp::Neq,
+            Some(Token::NotEqual) => BinaryOp::Neq,
             Some(Token::GreaterThan) => BinaryOp::Gt,
-            Some(Token::LessThan)    => BinaryOp::Lt,
+            Some(Token::LessThan) => BinaryOp::Lt,
             Some(Token::GreaterEqual) => BinaryOp::Gte,
-            Some(Token::LessEqual)    => BinaryOp::Lte,
+            Some(Token::LessEqual) => BinaryOp::Lte,
             _ => return left,
         };
 
@@ -526,11 +684,7 @@ impl Parser {
                 }
                 expr
             }
-            Some(Token::BoolLit(value)) => Expr::Bool(value),
-            Some(Token::Ident(ident)) => Expr::Ident(ident),
-            Some(Token::IntLit(value)) => Expr::Int(value),
-            Some(Token::FloatLit(value)) => Expr::Float(value),
-            Some(Token::StrLit(value)) => Expr::Str(value),
+            Some(_) => { self.pos -= 1; self.get_value(&Type::Void) },
             _ => panic!("Expected primary expression"),
         }
     }
@@ -690,16 +844,25 @@ mod tests {
             Token::LeftBrace,
             Token::RightBrace,
         ]);
-        assert_eq!(parser_1.next_if(), Node::If {
-            condition: Expr::Binary(Box::new(Expr::Ident(String::from("Test"))), BinaryOp::Eq, Box::new(Expr::Int(1))),
-            then_branch: vec![],
-            else_branch: Some(vec![
-                Node::If {
-                    condition: Expr::Binary(Box::new(Expr::Ident(String::from("Test2"))), BinaryOp::Eq, Box::new(Expr::Int(2))),
+        assert_eq!(
+            parser_1.next_if(),
+            Node::If {
+                condition: Expr::Binary(
+                    Box::new(Expr::Ident(String::from("Test"))),
+                    BinaryOp::Eq,
+                    Box::new(Expr::Int(1))
+                ),
+                then_branch: vec![],
+                else_branch: Some(vec![Node::If {
+                    condition: Expr::Binary(
+                        Box::new(Expr::Ident(String::from("Test2"))),
+                        BinaryOp::Eq,
+                        Box::new(Expr::Int(2))
+                    ),
                     then_branch: vec![],
                     else_branch: Some(vec![]),
-                }
-            ])
-        })
+                }])
+            }
+        )
     }
 }
